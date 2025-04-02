@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Azure.Storage.Queues;
 using System.Text.Json;
-
 using TicketHubApi.Models;
+using Microsoft.Extensions.Configuration;
 
 namespace TicketHubApi.Controllers
 {
@@ -10,6 +10,13 @@ namespace TicketHubApi.Controllers
     [Route("api/[controller]")]
     public class PurchaseController : ControllerBase
     {
+        private readonly IConfiguration _configuration;
+
+        public PurchaseController(IConfiguration configuration)
+        {
+            _configuration = configuration;
+        }
+
         [HttpPost]
         public async Task<IActionResult> Post([FromBody] Purchase purchase)
         {
@@ -48,15 +55,29 @@ namespace TicketHubApi.Controllers
             if (errors.Any())
                 return BadRequest(string.Join(" ", errors));
 
-            // Send to Azure Queue
-            var connectionString = Environment.GetEnvironmentVariable("AZURE_STORAGE_CONNECTION_STRING");
-            var queueClient = new QueueClient(connectionString, "tickethub");
-            await queueClient.CreateIfNotExistsAsync();
+            //Get connection string from User Secrets
+            var connectionString = _configuration["AzureStorageConnectionString"];
 
-            string jsonMessage = JsonSerializer.Serialize(purchase);
-            await queueClient.SendMessageAsync(Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(jsonMessage)));
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                return StatusCode(500, "Server error: AzureStorageConnectionString is missing.");
+            }
 
-            return Ok("Purchase accepted and queued.");
+            try
+            {
+                var queueClient = new QueueClient(connectionString, "tickethub");
+                await queueClient.CreateIfNotExistsAsync();
+
+                string jsonMessage = JsonSerializer.Serialize(purchase);
+                string encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(jsonMessage));
+                await queueClient.SendMessageAsync(encoded);
+
+                return Ok("Purchase accepted and queued.");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Server error: {ex.Message}");
+            }
         }
     }
 }

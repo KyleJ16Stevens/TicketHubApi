@@ -6,6 +6,11 @@ builder.Services.AddControllers();
 
 var app = builder.Build();
 
+if (builder.Environment.IsDevelopment())
+{
+    builder.Configuration.AddUserSecrets<Program>();
+}
+
 
 
 app.UseHttpsRedirection();
